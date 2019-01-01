@@ -20,7 +20,6 @@ func main() {
 	maxsquare := 1
 
 	for square := 1; square <= 300; square++ {
-		fmt.Printf("square %d, current max: %d at (%d,%d)\n", square, max, maxx, maxy)
 		for x := 1; x <= 300-square+1; x++ {
 			for y := 1; y <= 300-square+1; y++ {
 				s := sum(x,y,square,&g)
@@ -32,6 +31,7 @@ func main() {
 				}
 			}
 		}
+		fmt.Printf("square %d, current max: %d at %d,%d,%d\n", square, max, maxx, maxy, maxsquare)
 	}
 
 	fmt.Printf("max %d at (%d,%d) for square %d\n", max, maxx, maxy, maxsquare)
