@@ -8,7 +8,7 @@ import (
 
 func main() {
 	
-	//fill(&grid, 5177)
+	//fill(&grid, 5177) 
 	fmt.Println("122,79 @57", grid(57)[122][79])
 	fmt.Println("217,196 @39", grid(39)[217][196])
 
