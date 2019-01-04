@@ -9,6 +9,9 @@ import (
 
 type Race byte
 
+type Point struct {
+	x,y int
+}
 const (
 	Goblin Race = 0
 	Elf    Race = 1
@@ -32,17 +35,27 @@ var board Board
 var units Units
 
 func main() {
-	load("in2.txt")
+	load("input.txt")
 
 	board.print()
 
-	for r := 0; units.endOfCombat() && r < 1000000; r++ { // rounds
+	r := 1
+	for ; units.endOfCombat() && r < 1000000; r++ { // rounds
 		// sort units by y.x
-		fmt.Println("round", r)
+		
 		round()
 		units.sort()
 		board.print()
+		fmt.Printf("==> Round %d finished\n", r)
+		units.removeDead()
 	}
+
+	sum := 0
+	for _,u:=range units.list{
+		sum += u.hp
+	}
+	fmt.Printf("Outcome: %d * %d = %d\n", r-1, sum, (r-1)*sum)
+	fmt.Printf("Outcome: %d * %d = %d\n", r-2, sum, (r-2)*sum)
 }
 
 func load(path string) {
@@ -210,42 +223,16 @@ func round() {
 
 		// printDist(d)
 
-		// find adjacent field that's closest to an enemy
-		min := 10000
-		mini := -1
-		minj := -1
-		vectors := [][]int{
-			[]int{0, -1},
-			[]int{-1, 0},
-			[]int{1, 0},
-			[]int{0, 1}}
+		to := findMoveTarget(d, unit.x, unit.y)
 
-		attackTargets := []*Unit{}
-		for _, v := range vectors {
-			i := v[0]
-			j := v[1]
-			val := d[unit.x+i][unit.y+j]
-			// fmt.Printf(" i,j,val: %2d %2d %2d\n",i,j,val)
-			if val > 0 && val < min {
-				mini = i
-				minj = j
-				min = val
-			}
-			if val == 1 {
-				attackTargets = append(attackTargets, units.at(unit.x+i, unit.y+j))
-			}
-
+		
+		if to != nil {
+			units.move(unit, to.x-unit.x, to.y-unit.y)
 		}
 
-		if min == 1 {
-			sort.Slice(attackTargets, func (a,b int) bool {
-				return attackTargets[a].hp < attackTargets[b].hp
-			})
-			unit.attack(attackTargets[0])
-		} else if min < 10000 {
-			units.move(unit, mini, minj)
-		} else {
-			fmt.Printf("%d,%d cannot act\n", unit.x, unit.y)
+		target := findAttackTarget(unit)
+		if target != nil {
+				unit.attack(target)
 		}
 	}
 }
@@ -256,7 +243,8 @@ func (u *Unit) attack(target *Unit) {
 }
 
 func (units *Units) move(unit *Unit, dx int, dy int) {
-	fmt.Printf("%d,%d moving by %d,%d\n", unit.x, unit.y, dx, dy)
+	// fmt.Printf("%d,%d moving by %d,%d\n", unit.x, unit.y, dx, dy)
+	fmt.Printf("%d,%d moving to %d,%d\n", unit.x, unit.y, unit.x+dx, unit.y+dy)
 	units.pos[unit.x][unit.y] = nil
 	unit.x += dx
 	unit.y += dy
@@ -284,4 +272,59 @@ func (units *Units) endOfCombat() bool {
 		counts[u.race]++
 	}
 	return counts[0] > 0 && counts[1] > 0
+}
+
+func findMoveTarget(d [][]int, x int, y int) *Point {
+	adjacent := []Point{
+			{x, y-1},
+			{x -1 , y},
+			{x + 1, y},
+			{x , y+1}}
+
+	min := 10000
+	var to *Point
+
+	for i,_ := range adjacent {
+		a := adjacent[i]
+		val := d[a.x][a.y]
+		// fmt.Printf(" (%d,%d) -> %2d %2d val=%2d\n",x,y,a.x, a.y, val)
+
+		// adjacent to enemy, don't move
+		if val == 1 {
+			return nil
+		}
+		if val > 0 && val < min {
+			to = &a
+			min = val
+			// fmt.Printf("   new min = %d, to = %+v\n", min, to)
+		}
+	}
+	// fmt.Printf("   returning %+v\n", to)
+	return to
+}
+
+func findAttackTarget(u *Unit) *Unit {
+	adjacent := []Point{
+			{u.x, u.y-1},
+			{u.x -1 , u.y},
+			{u.x + 1, u.y},
+			{u.x , u.y+1}}
+
+	var targets []*Unit
+
+	for _,a := range adjacent {
+		t := units.at(a.x, a.y)
+		if t!= nil && t.race != u.race && t.hp > 0 {
+			targets = append(targets, t)
+		}
+	}
+
+	if len(targets) == 0 {
+		return nil
+	}
+
+	sort.Slice(targets, func (a,b int) bool {
+			return targets[a].hp < targets[b].hp
+	})
+	return targets[0]
 }
