@@ -10,8 +10,9 @@ import (
 type Race byte
 
 type Point struct {
-	x,y int
+	x, y int
 }
+
 const (
 	Goblin Race = 0
 	Elf    Race = 1
@@ -35,23 +36,23 @@ var board Board
 var units Units
 
 func main() {
-	load("input.txt")
+	load(os.Args[2])
 
-	board.print()
+	board.print(0)
 
 	r := 1
 	for ; units.endOfCombat() && r < 1000000; r++ { // rounds
 		// sort units by y.x
-		
+
 		round()
 		units.sort()
-		board.print()
-		fmt.Printf("==> Round %d finished\n", r)
+		board.print(r)
+		fmt.Printf("==> Rnd %d finished\n", r)
 		units.removeDead()
 	}
 
 	sum := 0
-	for _,u:=range units.list{
+	for _, u := range units.list {
 		sum += u.hp
 	}
 	fmt.Printf("Outcome: %d * %d = %d\n", r-1, sum, (r-1)*sum)
@@ -114,7 +115,17 @@ func (units *Units) at(x int, y int) *Unit {
 	return units.pos[x][y]
 }
 
-func (board Board) print() {
+func (units *Units) getByRace(x int, y int, race Race) *Unit {
+
+	u := units.pos[x][y]
+	if u != nil && u.race == race {
+		return u
+	}
+	return nil
+}
+
+func (board Board) print(round int) {
+	fmt.Printf("Round: %d\n", round)
 	for y := 0; y < len(board[0]); y++ {
 		for x := 0; x < len(board); x++ {
 			u := units.at(x, y)
@@ -128,13 +139,13 @@ func (board Board) print() {
 		}
 		fmt.Println()
 	}
-	for _,u := range units.list {
+	for _, u := range units.list {
 		fmt.Printf("%+v\n", u)
 	}
 }
 
 // create distance map to each unit of specified race
-func distmap(fromRace Race) [][]int {
+func distmap(x int, y int) [][]int {
 	width := len(board)
 	height := len(board[0])
 	d := make([][]int, height)
@@ -142,11 +153,8 @@ func distmap(fromRace Race) [][]int {
 		d[i] = make([]int, width)
 	}
 
-	for _, u := range units.list {
-		if u.race == fromRace {
-			distmapFill(1, u.x, u.y, d)
-		}
-	}
+	distmapFill(1, x, y, d)
+
 	return d
 }
 
@@ -180,9 +188,9 @@ func printDist(d [][]int) {
 	for y := 0; y < len(d[0]); y++ {
 		for x := range d {
 			if d[x][y] == 100000 {
-				fmt.Print(".")
+				fmt.Print(" .")
 			} else {
-				fmt.Print(d[x][y])
+				fmt.Printf("%2d", d[x][y])
 			}
 		}
 		fmt.Println()
@@ -211,28 +219,28 @@ func round() {
 	units.removeDead()
 	units.sort()
 
-	for _, unit := range units.list {
+	cpy := make([]*Unit, len(units.list))
+	copy(cpy, units.list)
+	for _, unit := range cpy {
 		if unit.hp <= 0 {
 			continue
 		}
 
 		// fmt.Printf("processing unit %d,%d\n", unit.x, unit.y)
 
-		// d contains distances to the nearest enemy (plus 1)
-		d := distmap(unit.race.opposite())
-
-		// printDist(d)
-
-		to := findMoveTarget(d, unit.x, unit.y)
-
 		
+		
+
+		destination := findInRangeDestination(unit)
+		to := findMoveTarget(unit, destination)
+
 		if to != nil {
 			units.move(unit, to.x-unit.x, to.y-unit.y)
 		}
 
 		target := findAttackTarget(unit)
 		if target != nil {
-				unit.attack(target)
+			unit.attack(target)
 		}
 	}
 }
@@ -240,6 +248,9 @@ func round() {
 func (u *Unit) attack(target *Unit) {
 	fmt.Printf("%d,%d attacking %+v\n", u.x, u.y, target)
 	target.hp -= 3
+	if target.hp <= 0 {
+		units.remove(target)
+	}
 }
 
 func (units *Units) move(unit *Unit, dx int, dy int) {
@@ -251,12 +262,23 @@ func (units *Units) move(unit *Unit, dx int, dy int) {
 	units.pos[unit.x][unit.y] = unit
 }
 
+func (units *Units) remove(u *Unit) {
+	units.pos[u.x][u.y] = nil
+
+	for i,_ := range units.list {
+		if units.list[i] == u {
+			units.list = append(units.list[:i], units.list[i+1:]...)
+			return
+		}
+	}
+}
+
 func (units *Units) removeDead() {
 	newlist := []*Unit{}
-	for _,u := range units.list {
+	for _, u := range units.list {
 		if u.hp > 0 {
 			newlist = append(newlist, u)
-		}else{
+		} else {
 			fmt.Printf("Removing dead unit %+v\n", u)
 			units.pos[u.x][u.y] = nil
 		}
@@ -266,55 +288,79 @@ func (units *Units) removeDead() {
 }
 
 func (units *Units) endOfCombat() bool {
-	counts := []int{0,0}
+	counts := []int{0, 0}
 
-	for _,u := range units.list {
+	for _, u := range units.list {
 		counts[u.race]++
 	}
 	return counts[0] > 0 && counts[1] > 0
 }
 
-func findMoveTarget(d [][]int, x int, y int) *Point {
-	adjacent := []Point{
-			{x, y-1},
-			{x -1 , y},
-			{x + 1, y},
-			{x , y+1}}
+/* Finds in-range point - adjacent to an enemy, reachable by unit
+ * and closest to the unit
+ */
+func findInRangeDestination(unit *Unit) *Point {
+	d := distmap(unit.x, unit.y)
+	enemyRace := unit.race.opposite()
+	//fmt.Printf(" distmap from %d,%d\n", unit.x, unit.y)
+	//printDist(d)
+	if unit.x == 5 && unit.y == 15 {
+		printDist(d)
+	}
 
-	min := 10000
-	var to *Point
-
-	for i,_ := range adjacent {
-		a := adjacent[i]
-		val := d[a.x][a.y]
-		// fmt.Printf(" (%d,%d) -> %2d %2d val=%2d\n",x,y,a.x, a.y, val)
-
-		// adjacent to enemy, don't move
-		if val == 1 {
-			return nil
-		}
-		if val > 0 && val < min {
-			to = &a
-			min = val
-			// fmt.Printf("   new min = %d, to = %+v\n", min, to)
+	// find closest point in d adjacent to enemy unit
+	minDist := 10000
+	var closest *Point
+	for j := 1; j < len(d[0])-1; j++ {
+		for i := 1; i < len(d)-1; i++ {
+			for _, adj := range (Point{i, j}.adjacent()) {
+				t := units.getByRace(adj.x, adj.y, enemyRace)
+				if t != nil && d[i][j] < minDist && d[i][j] > 0 {
+					minDist = d[i][j]
+					closest = &Point{i, j}
+				}
+			}
 		}
 	}
+	if closest != nil && (unit.x != closest.x || unit.y != closest.y) {
+		fmt.Printf("%d,%d will move towards %+v, mindist: %d\n", unit.x, unit.y, closest, minDist)
+		return closest
+	}
+	
+	return nil
+}
+
+func findMoveTarget(unit *Unit, dest *Point) *Point {
+	if dest == nil {
+		return nil
+	}
+	d := distmap(dest.x, dest.y)
+
+	minDist := 100000
+	var target Point
+	for _, a := range (Point{unit.x, unit.y}.adjacent()) {
+		if d[a.x][a.y] > 0 && d[a.x][a.y] < minDist {
+			minDist = d[a.x][a.y]
+			target = Point{a.x, a.y}
+		}
+	}
+	
 	// fmt.Printf("   returning %+v\n", to)
-	return to
+	return &target
 }
 
 func findAttackTarget(u *Unit) *Unit {
 	adjacent := []Point{
-			{u.x, u.y-1},
-			{u.x -1 , u.y},
-			{u.x + 1, u.y},
-			{u.x , u.y+1}}
+		{u.x, u.y - 1},
+		{u.x - 1, u.y},
+		{u.x + 1, u.y},
+		{u.x, u.y + 1}}
 
 	var targets []*Unit
 
-	for _,a := range adjacent {
+	for _, a := range adjacent {
 		t := units.at(a.x, a.y)
-		if t!= nil && t.race != u.race && t.hp > 0 {
+		if t != nil && t.race != u.race && t.hp > 0 {
 			targets = append(targets, t)
 		}
 	}
@@ -323,8 +369,19 @@ func findAttackTarget(u *Unit) *Unit {
 		return nil
 	}
 
-	sort.Slice(targets, func (a,b int) bool {
-			return targets[a].hp < targets[b].hp
+	sort.Slice(targets, func(a, b int) bool {
+		return targets[a].hp < targets[b].hp
 	})
 	return targets[0]
 }
+
+func (p Point) adjacent() []Point {
+	return []Point{
+		{p.x, p.y - 1},
+		{p.x - 1, p.y},
+		{p.x + 1, p.y},
+		{p.x, p.y + 1}}
+}
+
+// 183519 too low. 186432 is wrong ;(
+// correnct answer is : 195774
