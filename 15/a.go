@@ -24,6 +24,7 @@ type Unit struct {
 	x, y int
 	hp   int
 	race Race
+	power int
 }
 
 type Units struct {
@@ -96,10 +97,10 @@ func load(path string) {
 		for y, _ := range board[x] {
 			if board[x][y] == 'G' {
 				board[x][y] = '.'
-				units.add(Unit{x, y, 200, Goblin})
+				units.add(Unit{x, y, 200, Goblin, 3})
 			} else if board[x][y] == 'E' {
 				board[x][y] = '.'
-				units.add(Unit{x, y, 200, Elf})
+				units.add(Unit{x, y, 200, Elf, 3 /*34*/ })
 			}
 		}
 	}
@@ -247,8 +248,9 @@ func round() {
 
 func (u *Unit) attack(target *Unit) {
 	fmt.Printf("%d,%d attacking %+v\n", u.x, u.y, target)
-	target.hp -= 3
+	target.hp -= u.power
 	if target.hp <= 0 {
+		fmt.Printf("unit died at %d,%d, race=%d\n", target.x, target.y, target.race)
 		units.remove(target)
 	}
 }
